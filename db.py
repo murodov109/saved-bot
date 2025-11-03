@@ -1,43 +1,67 @@
-import os
+import sqlite3
 
-def read_list(filename):
-    if not os.path.exists(filename):
-        open(filename, "w").close()
-    with open(filename, "r") as f:
-        return [line.strip() for line in f if line.strip()]
+def connect():
+    return sqlite3.connect("data.db", check_same_thread=False)
 
-def write_list(filename, data):
-    with open(filename, "w") as f:
-        f.write("\n".join(data))
+def create_tables():
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE, username TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER UNIQUE)")
+    cur.execute("CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_username TEXT UNIQUE)")
+    conn.commit()
+    conn.close()
 
 def add_user(user_id, username=None):
-    users = read_list("users.txt")
-    if str(user_id) not in users:
-        users.append(str(user_id))
-        write_list("users.txt", users)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+    conn.commit()
+    conn.close()
 
 def get_users():
-    return read_list("users.txt")
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users")
+    data = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return data
 
 def add_admin(admin_id):
-    admins = read_list("admins.txt")
-    if str(admin_id) not in admins:
-        admins.append(str(admin_id))
-        write_list("admins.txt", admins)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO admins (admin_id) VALUES (?)", (admin_id,))
+    conn.commit()
+    conn.close()
 
 def get_admins():
-    return [int(a) for a in read_list("admins.txt")]
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT admin_id FROM admins")
+    data = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return data
 
-def add_channel(channel):
-    channels = read_list("channels.txt")
-    if channel not in channels:
-        channels.append(channel)
-        write_list("channels.txt", channels)
+def add_channel(channel_username):
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO channels (channel_username) VALUES (?)", (channel_username,))
+    conn.commit()
+    conn.close()
 
-def remove_channel(channel):
-    channels = read_list("channels.txt")
-    channels = [c for c in channels if c != channel]
-    write_list("channels.txt", channels)
+def remove_channel(channel_username):
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM channels WHERE channel_username = ?", (channel_username,))
+    conn.commit()
+    conn.close()
 
 def get_channels():
-    return read_list("channels.txt")
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("SELECT channel_username FROM channels")
+    data = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return data
+
+create_tables()

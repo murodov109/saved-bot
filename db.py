@@ -1,49 +1,48 @@
 import sqlite3
 
-def connect():
-    return sqlite3.connect("data.db", check_same_thread=False)
+class Database:
+    def __init__(self, path_to_db="main.db"):
+        self.path_to_db = path_to_db
+        self.create_tables()
 
-def create_tables():
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        is_admin INTEGER DEFAULT 0
-    )
-    """)
-    conn.commit()
-    conn.close()
+    def create_connection(self):
+        conn = sqlite3.connect(self.path_to_db)
+        return conn
 
-def add_user(user_id, username):
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
-    conn.commit()
-    conn.close()
+    def create_tables(self):
+        with self.create_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE,
+                username TEXT
+            )''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_link TEXT
+            )''')
+            conn.commit()
 
-def get_user(user_id):
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-    user = cur.fetchone()
-    conn.close()
-    return user
+    def add_user(self, user_id, username):
+        with self.create_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+            conn.commit()
 
-def make_admin(user_id):
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    def get_users(self):
+        with self.create_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM users")
+            return [row[0] for row in cursor.fetchall()]
 
-def get_admins():
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("SELECT user_id FROM users WHERE is_admin = 1")
-    admins = [row[0] for row in cur.fetchall()]
-    conn.close()
-    return admins
+    def add_channel(self, channel_link):
+        with self.create_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO channels (channel_link) VALUES (?)", (channel_link,))
+            conn.commit()
 
-create_tables()
+    def get_channels(self):
+        with self.create_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT channel_link FROM channels")
+            return [row[0] for row in cursor.fetchall()]

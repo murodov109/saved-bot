@@ -7,22 +7,29 @@ from db import Database
 from keep_alive import keep_alive
 
 bot = telebot.TeleBot(BOT_TOKEN)
+db = Database()
 
 def check_subscription(user_id):
     for channel in MANDATORY_CHANNELS:
-        status = bot.get_chat_member(channel, user_id)
-        if status.status not in ["member", "administrator", "creator"]:
+        try:
+            status = bot.get_chat_member(channel, user_id)
+            if status.status not in ["member", "administrator", "creator"]:
+                return False
+        except:
             return False
     return True
 
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
-    Database.add_user(user_id, message.from_user.username)
+    username = message.from_user.username or "no_username"
+    db.add_user(user_id, username)
+
     markup = types.InlineKeyboardMarkup()
     for channel in MANDATORY_CHANNELS:
-        markup.add(types.InlineKeyboardButton(text=f"📢 Kanalga obuna bo‘lish", url=f"https://t.me/{channel.replace('@', '')}"))
+        markup.add(types.InlineKeyboardButton(text="📢 Kanalga obuna bo‘lish", url=f"https://t.me/{channel.replace('@', '')}"))
     markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data="check_sub"))
+
     bot.send_message(message.chat.id, "👋 Salom! Videoni yuklab olishdan oldin quyidagi kanallarga obuna bo‘ling:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
@@ -36,9 +43,11 @@ def check_sub(call):
 def download_video(message):
     url = message.text.strip()
     bot.send_message(message.chat.id, "⏳ Yuklanmoqda, biroz kuting...")
+
     try:
         api_url = f"https://api.douyin.wtf/api?url={url}"
-        response = requests.get(api_url).json()
+        response = requests.get(api_url, timeout=10).json()
+
         if "video" in response:
             video_url = response["video"]
             caption = response.get("desc", "🎬 Video yuklandi!")
@@ -48,7 +57,7 @@ def download_video(message):
             bot.send_photo(message.chat.id, image_url, caption="🖼 Rasm yuklandi!")
         else:
             bot.send_message(message.chat.id, "❌ Videoni yuklab bo‘lmadi, boshqa havola yuboring.")
-    except Exception as e:
+    except Exception:
         bot.send_message(message.chat.id, "⚠️ Xatolik: video yuklab bo‘lmadi yoki noto‘g‘ri havola.")
 
 @bot.message_handler(commands=['admin'])
@@ -67,7 +76,7 @@ def send_ad(message):
         bot.register_next_step_handler(message, process_ad)
 
 def process_ad(message):
-    users = Database.get_users()
+    users = db.get_users()
     count = 0
     for user in users:
         try:
@@ -81,7 +90,7 @@ def process_ad(message):
 @bot.message_handler(func=lambda message: message.text == "📊 Statistika")
 def stats(message):
     if message.from_user.id in ADMINS:
-        total_users = len(Database.get_users())
+        total_users = len(db.get_users())
         bot.send_message(message.chat.id, f"👥 Bot foydalanuvchilari soni: {total_users}")
 
 @bot.message_handler(func=lambda message: message.text == "➕ Kanal qo‘shish")
@@ -93,7 +102,7 @@ def add_channel(message):
 def save_channel(message):
     channel = message.text.strip()
     if channel.startswith("@"):
-        Database.add_channel(channel)
+        db.add_channel(channel)
         bot.send_message(message.chat.id, f"✅ {channel} kanal majburiy obunaga qo‘shildi.")
     else:
         bot.send_message(message.chat.id, "❌ Noto‘g‘ri format.")
@@ -106,7 +115,7 @@ def remove_channel(message):
 
 def delete_channel(message):
     channel = message.text.strip()
-    Database.remove_channel(channel)
+    db.remove_channel(channel)
     bot.send_message(message.chat.id, f"✅ {channel} o‘chirildi.")
 
 @bot.message_handler(func=lambda message: message.text == "👤 Admin qo‘shish")
@@ -118,7 +127,7 @@ def add_admin(message):
 def save_admin(message):
     try:
         admin_id = int(message.text)
-        Database.add_admin(admin_id)
+        db.add_admin(admin_id)
         bot.send_message(message.chat.id, f"✅ {admin_id} admin sifatida qo‘shildi.")
     except:
         bot.send_message(message.chat.id, "❌ Noto‘g‘ri ID format.")

@@ -1,6 +1,7 @@
 import telebot
 from telebot import types
 import requests
+import re
 from config import BOT_TOKEN, ADMINS
 from db import add_user, get_users, get_admins, add_admin, add_channel, remove_channel, get_channels
 from keep_alive import keep_alive
@@ -29,7 +30,7 @@ def start(message):
         markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data="check_sub"))
         bot.send_message(message.chat.id, "👇 Quyidagi kanallarga obuna bo‘ling:", reply_markup=markup)
     else:
-        bot.send_message(message.chat.id, "🎬 Yuklamoqchi bo‘lgan video havolasini yuboring.")
+        bot.send_message(message.chat.id, "🎬 Havolani yuboring (Instagram, TikTok, YouTube).")
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
 def check_sub(call):
@@ -49,15 +50,13 @@ def admin_panel(message):
 
 @bot.message_handler(func=lambda m: m.text == "📊 Statistika")
 def stats(message):
-    if message.from_user.id in ADMINS or message.from_user.id in get_admins():
-        total = len(get_users())
-        bot.send_message(message.chat.id, f"👥 Jami foydalanuvchilar: {total}")
+    total = len(get_users())
+    bot.send_message(message.chat.id, f"👥 Jami foydalanuvchilar: {total}")
 
 @bot.message_handler(func=lambda m: m.text == "📢 Reklama yuborish")
 def ad_send(message):
-    if message.from_user.id in ADMINS or message.from_user.id in get_admins():
-        bot.send_message(message.chat.id, "✍️ Reklama matnini yuboring:")
-        bot.register_next_step_handler(message, send_ad)
+    bot.send_message(message.chat.id, "✍️ Reklama matnini yuboring:")
+    bot.register_next_step_handler(message, send_ad)
 
 def send_ad(message):
     users = get_users()
@@ -103,31 +102,39 @@ def save_admin(message):
     except:
         bot.send_message(message.chat.id, "❌ Xatolik.")
 
-@bot.message_handler(func=lambda message: message.text.startswith("http"))
-def download_video(message):
-    bot.send_message(message.chat.id, "⏳ Yuklanmoqda, biroz kuting...")
-    url = message.text
-    video_link = None
+def get_video_url(url):
+    if "instagram" in url:
+        api = f"https://snapinsta.app/api?url={url}"
+    elif "tiktok" in url:
+        api = f"https://www.tikwm.com/api/?url={url}"
+    elif "youtube" in url:
+        api = f"https://api.zenoapi.com/youtube?url={url}"
+    else:
+        return None
     try:
-        if "tiktok" in url or "douyin" in url:
-            res = requests.get(f"https://api.tiklydown.eu.org/api/download?url={url}").json()
-            video_link = res.get("video", {}).get("noWatermark", None)
-        elif "instagram" in url:
-            res = requests.post("https://saveig.app/api/ajaxSearch", data={"url": url}).json()
-            video_link = res["data"][0]["url"] if "data" in res and res["data"] else None
-        elif "youtube" in url or "youtu.be" in url:
-            res = requests.get(f"https://yt-downloader.savetube.me/api/download?url={url}").json()
-            if "formats" in res:
-                video_link = res["formats"][0]["url"]
-        if not video_link:
-            res = requests.get(f"https://api.douyin.wtf/api?url={url}").json()
-            video_link = res.get("video")
-        if video_link:
-            bot.send_video(message.chat.id, video_link, caption="🎬 Video yuklandi!")
-        else:
-            bot.send_message(message.chat.id, "❌ Video yuklab bo‘lmadi.")
-    except Exception as e:
-        bot.send_message(message.chat.id, "⚠️ Xatolik, boshqa havola yuboring.")
+        r = requests.get(api, timeout=10)
+        data = r.json()
+        if "video" in data:
+            return data["video"]
+        elif "url" in data:
+            return data["url"]
+        elif "data" in data and "play" in data["data"]:
+            return data["data"]["play"]
+    except:
+        return None
+
+@bot.message_handler(func=lambda message: re.match(r'https?://', message.text))
+def downloader(message):
+    url = message.text.strip()
+    bot.send_message(message.chat.id, "⏳ Yuklanmoqda...")
+    video = get_video_url(url)
+    if video:
+        try:
+            bot.send_video(message.chat.id, video, caption="🎬 Yuklab olindi!")
+        except:
+            bot.send_message(message.chat.id, f"🔗 Yuklab olish uchun: {video}")
+    else:
+        bot.send_message(message.chat.id, "❌ Videoni yuklab bo‘lmadi.")
 
 keep_alive()
 bot.polling(non_stop=True)

@@ -1,49 +1,55 @@
 import sqlite3
 
-def connect():
-    conn = sqlite3.connect("database.db", check_same_thread=False)
-    cursor = conn.cursor()
-    return conn, cursor
+def get_connection():
+    return sqlite3.connect("database.db")
 
 def create_tables():
-    conn, cursor = connect()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER UNIQUE,
-        username TEXT,
-        is_admin INTEGER DEFAULT 0
-    )""")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER UNIQUE,
+            username TEXT,
+            first_name TEXT,
+            subscribed INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT,
+            name TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
-def add_user(user_id, username):
-    conn, cursor = connect()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+def add_user(user_id, username, first_name):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", (user_id, username, first_name))
     conn.commit()
     conn.close()
 
-def get_users():
-    conn, cursor = connect()
-    cursor.execute("SELECT user_id, username, is_admin FROM users")
-    users = cursor.fetchall()
+def get_channels():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT channel_id FROM channels")
+    channels = cursor.fetchall()
     conn.close()
-    return users
+    return [c[0] for c in channels]
 
-def add_admin(user_id):
-    conn, cursor = connect()
-    cursor.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (user_id,))
+def add_channel(channel_id, name):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO channels (channel_id, name) VALUES (?, ?)", (channel_id, name))
     conn.commit()
     conn.close()
 
-def remove_admin(user_id):
-    conn, cursor = connect()
-    cursor.execute("UPDATE users SET is_admin = 0 WHERE user_id = ?", (user_id,))
+def remove_channel(channel_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM channels WHERE channel_id=?", (channel_id,))
     conn.commit()
     conn.close()
-
-def is_admin(user_id):
-    conn, cursor = connect()
-    cursor.execute("SELECT is_admin FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result and result[0] == 1

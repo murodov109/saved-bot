@@ -13,29 +13,28 @@ def check_subscription(user_id):
             status = bot.get_chat_member(channel, user_id)
             if status.status not in ["member", "administrator", "creator"]:
                 return False
-        except Exception:
+        except:
             return False
     return True
 
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
-    username = message.from_user.username or "NoUsername"
-    add_user(user_id, username)
+    add_user(user_id, message.from_user.username)
     channels = get_channels()
     if channels:
         markup = types.InlineKeyboardMarkup()
         for channel in channels:
-            markup.add(types.InlineKeyboardButton(f"📢 {channel}", url=f"https://t.me/{channel.replace('@', '')}"))
+            markup.add(types.InlineKeyboardButton(f"📢 {channel}", url=f"https://t.me/{channel.replace('@','')}"))
         markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data="check_sub"))
-        bot.send_message(message.chat.id, "👇 Quyidagi kanallarga obuna bo‘ling va tasdiqlang:", reply_markup=markup)
+        bot.send_message(message.chat.id, "👇 Quyidagi kanallarga obuna bo‘ling:", reply_markup=markup)
     else:
-        bot.send_message(message.chat.id, "🎬 Havolani yuboring (Instagram, TikTok, YouTube).")
+        bot.send_message(message.chat.id, "🎬 Yuklamoqchi bo‘lgan video havolasini yuboring.")
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
 def check_sub(call):
     if check_subscription(call.from_user.id):
-        bot.send_message(call.message.chat.id, "✅ Obuna tasdiqlandi! Endi video yoki rasm havolasini yuboring.")
+        bot.send_message(call.message.chat.id, "✅ Tabriklaymiz! Endi video yoki rasm havolasini yuboring.")
     else:
         bot.answer_callback_query(call.id, "❌ Hali barcha kanallarga obuna bo‘lmadingiz.", show_alert=True)
 
@@ -43,8 +42,7 @@ def check_sub(call):
 def admin_panel(message):
     if message.from_user.id in ADMINS or message.from_user.id in get_admins():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.add("➕ Kanal qo‘shish", "➖ Kanal o‘chirish")
-        markup.add("📢 Reklama yuborish", "👤 Admin qo‘shish", "📊 Statistika")
+        markup.add("➕ Kanal qo‘shish", "➖ Kanal o‘chirish", "📢 Reklama yuborish", "👤 Admin qo‘shish", "📊 Statistika")
         bot.send_message(message.chat.id, "🔧 Admin panel:", reply_markup=markup)
     else:
         bot.send_message(message.chat.id, "❌ Siz admin emassiz.")
@@ -68,7 +66,7 @@ def send_ad(message):
         try:
             bot.send_message(user, message.text)
             count += 1
-        except Exception:
+        except:
             pass
     bot.send_message(message.chat.id, f"✅ {count} foydalanuvchiga yuborildi.")
 
@@ -102,22 +100,33 @@ def save_admin(message):
     try:
         add_admin(int(message.text))
         bot.send_message(message.chat.id, f"✅ Admin {message.text} qo‘shildi.")
-    except Exception:
-        bot.send_message(message.chat.id, "❌ Xatolik yuz berdi.")
+    except:
+        bot.send_message(message.chat.id, "❌ Xatolik.")
 
 @bot.message_handler(func=lambda message: message.text.startswith("http"))
 def download_video(message):
     bot.send_message(message.chat.id, "⏳ Yuklanmoqda, biroz kuting...")
+    url = message.text
+    video_link = None
     try:
-        url = f"https://api.douyin.wtf/api?url={message.text}"
-        res = requests.get(url).json()
-        if "video" in res:
-            bot.send_video(message.chat.id, res["video"], caption="🎬 Video yuklandi!")
-        elif "image" in res:
-            bot.send_photo(message.chat.id, res["image"], caption="🖼 Rasm yuklandi!")
+        if "tiktok" in url or "douyin" in url:
+            res = requests.get(f"https://api.tiklydown.eu.org/api/download?url={url}").json()
+            video_link = res.get("video", {}).get("noWatermark", None)
+        elif "instagram" in url:
+            res = requests.post("https://saveig.app/api/ajaxSearch", data={"url": url}).json()
+            video_link = res["data"][0]["url"] if "data" in res and res["data"] else None
+        elif "youtube" in url or "youtu.be" in url:
+            res = requests.get(f"https://yt-downloader.savetube.me/api/download?url={url}").json()
+            if "formats" in res:
+                video_link = res["formats"][0]["url"]
+        if not video_link:
+            res = requests.get(f"https://api.douyin.wtf/api?url={url}").json()
+            video_link = res.get("video")
+        if video_link:
+            bot.send_video(message.chat.id, video_link, caption="🎬 Video yuklandi!")
         else:
-            bot.send_message(message.chat.id, "❌ Yuklab bo‘lmadi.")
-    except Exception:
+            bot.send_message(message.chat.id, "❌ Video yuklab bo‘lmadi.")
+    except Exception as e:
         bot.send_message(message.chat.id, "⚠️ Xatolik, boshqa havola yuboring.")
 
 keep_alive()

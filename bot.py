@@ -2,15 +2,14 @@ import telebot
 from telebot import types
 import requests
 import time
-from config import BOT_TOKEN, ADMINS, MANDATORY_CHANNELS
+from config import BOT_TOKEN, ADMINS
 from db import Database
 from keep_alive import keep_alive
 
 bot = telebot.TeleBot(BOT_TOKEN)
-db = Database()
 
 def check_subscription(user_id):
-    channels = db.get_channels() or MANDATORY_CHANNELS
+    channels = Database.get_channels()
     for channel in channels:
         try:
             status = bot.get_chat_member(channel, user_id)
@@ -23,12 +22,16 @@ def check_subscription(user_id):
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
-    username = message.from_user.username or "no_username"
-    db.add_user(user_id, username)
+    Database.add_user(user_id, message.from_user.username)
+    channels = Database.get_channels()
+
+    if not channels:
+        bot.send_message(message.chat.id, "👋 Salom! Hozircha majburiy obuna kanallari mavjud emas.\nEndi havolani yuboring (YouTube, Instagram yoki TikTok).")
+        return
+
     markup = types.InlineKeyboardMarkup()
-    channels = db.get_channels() or MANDATORY_CHANNELS
     for channel in channels:
-        markup.add(types.InlineKeyboardButton(text=f"📢 {channel} kanalga obuna bo‘lish", url=f"https://t.me/{channel.replace('@', '')}"))
+        markup.add(types.InlineKeyboardButton(text=f"📢 Kanalga obuna bo‘lish", url=f"https://t.me/{channel.replace('@', '')}"))
     markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data="check_sub"))
     bot.send_message(message.chat.id, "👋 Salom! Videoni yuklab olishdan oldin quyidagi kanallarga obuna bo‘ling:", reply_markup=markup)
 
@@ -40,63 +43,43 @@ def check_sub(call):
         bot.answer_callback_query(call.id, "❌ Iltimos, barcha kanallarga obuna bo‘ling.", show_alert=True)
 
 @bot.message_handler(func=lambda message: message.text.startswith("http"))
-def downloader(message):
+def download_video(message):
     url = message.text.strip()
-    bot.send_message(message.chat.id, "📥 Yuklanmoqda, iltimos kuting...")
+    bot.send_message(message.chat.id, "⏳ Yuklanmoqda, biroz kuting...")
     try:
-        # TIKTOK
-        if "tiktok.com" in url or "vm.tiktok.com" in url:
-            api = f"https://api.douyin.wtf/api?url={url}"
-            r = requests.get(api).json()
-            video = r.get("video")
-            if video:
-                bot.send_video(message.chat.id, video, caption="🎬 TikTok video yuklandi!")
-                return
+        api_url = f"https://api.douyin.wtf/api?url={url}"
+        response = requests.get(api_url).json()
 
-        # INSTAGRAM
-        if "instagram.com" in url:
-            api = f"https://snapinsta.app/api/ajaxSearch?url={url}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            res = requests.post(api, headers=headers)
-            if "src" in res.text:
-                link = res.text.split('src="')[1].split('"')[0]
-                if ".mp4" in link:
-                    bot.send_video(message.chat.id, link, caption="🎞 Instagram video yuklandi!")
-                else:
-                    bot.send_photo(message.chat.id, link, caption="🖼 Instagram rasm yuklandi!")
-                return
-
-        # YOUTUBE
-        if "youtube.com" in url or "youtu.be" in url:
-            api = f"https://api.ryzendesu.vip/api/downloader/yt?url={url}"
-            r = requests.get(api).json()
-            video = r["result"]["video"][0]["url"]
-            bot.send_video(message.chat.id, video, caption="🎥 YouTube video yuklandi!")
-            return
-
-        bot.send_message(message.chat.id, "❌ Videoni yuklab bo‘lmadi, boshqa havola yuboring.")
+        if "video" in response:
+            video_url = response["video"]
+            caption = response.get("desc", "🎬 Video yuklandi!")
+            bot.send_video(message.chat.id, video_url, caption=caption)
+        elif "image" in response:
+            image_url = response["image"]
+            bot.send_photo(message.chat.id, image_url, caption="🖼 Rasm yuklandi!")
+        else:
+            bot.send_message(message.chat.id, "❌ Videoni yuklab bo‘lmadi, boshqa havola yuboring.")
     except Exception as e:
-        bot.send_message(message.chat.id, f"⚠️ Xatolik yuz berdi: {e}")
+        bot.send_message(message.chat.id, f"⚠️ Xatolik: video yuklab bo‘lmadi.\n{e}")
 
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
+    if message.from_user.id in ADMINS:
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add("📢 Reklama yuborish", "📊 Statistika")
-        markup.add("➕ Kanal qo‘shish", "📜 Kanal ro‘yxati", "➖ Kanal o‘chirish")
-        markup.add("👤 Admin qo‘shish", "🔙 Chiqish")
+        markup.add("➕ Kanal qo‘shish", "➖ Kanal o‘chirish", "👤 Admin qo‘shish")
         bot.send_message(message.chat.id, "🔧 Admin panel:", reply_markup=markup)
     else:
         bot.send_message(message.chat.id, "❌ Siz admin emassiz.")
 
 @bot.message_handler(func=lambda message: message.text == "📢 Reklama yuborish")
 def send_ad(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
+    if message.from_user.id in ADMINS:
         bot.send_message(message.chat.id, "✍️ Reklama matnini yuboring.")
         bot.register_next_step_handler(message, process_ad)
 
 def process_ad(message):
-    users = db.get_users()
+    users = Database.get_users()
     count = 0
     for user in users:
         try:
@@ -109,68 +92,49 @@ def process_ad(message):
 
 @bot.message_handler(func=lambda message: message.text == "📊 Statistika")
 def stats(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
-        total_users = len(db.get_users())
-        total_channels = len(db.get_channels())
-        bot.send_message(message.chat.id, f"👥 Foydalanuvchilar: {total_users}\n📢 Majburiy kanallar: {total_channels}")
+    if message.from_user.id in ADMINS:
+        total_users = len(Database.get_users())
+        total_channels = len(Database.get_channels())
+        bot.send_message(message.chat.id, f"👥 Foydalanuvchilar: {total_users}\n📢 Kanallar: {total_channels}")
 
 @bot.message_handler(func=lambda message: message.text == "➕ Kanal qo‘shish")
 def add_channel(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
+    if message.from_user.id in ADMINS:
         bot.send_message(message.chat.id, "📢 Kanal username ni yuboring (@ bilan).")
         bot.register_next_step_handler(message, save_channel)
 
 def save_channel(message):
     channel = message.text.strip()
     if channel.startswith("@"):
-        db.add_channel(channel)
+        Database.add_channel(channel)
         bot.send_message(message.chat.id, f"✅ {channel} kanal majburiy obunaga qo‘shildi.")
     else:
         bot.send_message(message.chat.id, "❌ Noto‘g‘ri format.")
 
-@bot.message_handler(func=lambda message: message.text == "📜 Kanal ro‘yxati")
-def list_channels(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
-        channels = db.get_channels()
-        if not channels:
-            bot.send_message(message.chat.id, "📭 Hozircha kanal yo‘q.")
-        else:
-            text = "📋 Majburiy obuna kanallari:\n\n" + "\n".join(channels)
-            bot.send_message(message.chat.id, text)
-
 @bot.message_handler(func=lambda message: message.text == "➖ Kanal o‘chirish")
 def remove_channel(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
-        channels = db.get_channels()
-        if not channels:
-            bot.send_message(message.chat.id, "📭 O‘chiradigan kanal yo‘q.")
-            return
-        text = "🗑 Qaysi kanalni o‘chirmoqchisiz?\n\n" + "\n".join(channels)
-        bot.send_message(message.chat.id, text)
+    if message.from_user.id in ADMINS:
+        bot.send_message(message.chat.id, "🗑 O‘chirmoqchi bo‘lgan kanalni yuboring (@ bilan).")
         bot.register_next_step_handler(message, delete_channel)
 
 def delete_channel(message):
     channel = message.text.strip()
-    db.remove_channel(channel)
+    Database.remove_channel(channel)
     bot.send_message(message.chat.id, f"✅ {channel} o‘chirildi.")
 
 @bot.message_handler(func=lambda message: message.text == "👤 Admin qo‘shish")
 def add_admin(message):
-    if message.from_user.id in ADMINS or message.from_user.id in db.get_admins():
+    if message.from_user.id in ADMINS:
         bot.send_message(message.chat.id, "🆔 Yangi admin ID sini yuboring.")
         bot.register_next_step_handler(message, save_admin)
 
 def save_admin(message):
     try:
         admin_id = int(message.text)
-        db.add_admin(admin_id)
+        Database.add_admin(admin_id)
         bot.send_message(message.chat.id, f"✅ {admin_id} admin sifatida qo‘shildi.")
     except:
         bot.send_message(message.chat.id, "❌ Noto‘g‘ri ID format.")
-
-@bot.message_handler(func=lambda message: message.text == "🔙 Chiqish")
-def exit_admin(message):
-    bot.send_message(message.chat.id, "🔚 Admin paneldan chiqdingiz.", reply_markup=types.ReplyKeyboardRemove())
 
 keep_alive()
 bot.polling(non_stop=True)

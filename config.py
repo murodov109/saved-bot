@@ -1,2 +1,6 @@
 BOT_TOKEN = "8435705646:AAEJULzHr7N2Z-lleYsoQKf36yVnHxd0iXU"
 ADMINS = [7617397626]
+MANDATORY_CHANNELS = [
+"@kanal1_nomi",
+"@kanal2_nomi"
+]
